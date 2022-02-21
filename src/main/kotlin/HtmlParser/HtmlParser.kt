@@ -36,7 +36,8 @@ class LinksByHTML(doc: Document, url: Url) : Page.BodyLinks() {
             link.attr("href", href)
             if (href.startsWith("/")) {
                 val baseUrl = url.cUrl.split("/").take(3).joinToString("/")
-                link.attr("href", "${baseUrl}$href")
+
+                link.attr("href", if (href.startsWith("//")) "${baseUrl}$href" else "")
             }
         }
 

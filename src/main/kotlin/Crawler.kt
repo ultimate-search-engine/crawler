@@ -8,19 +8,18 @@ import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import libraries.*
 
 @Serializable
-data class PageScraperResponse(val html: String, val status: Int, val url: String)
+data class PageScraperResponse(val html: String?, val status: Int, val url: String)
 
 @Serializable
 data class PageScraperRequest(val url: String)
 
 
-class Crawler(private val index: String, private val amount: Long, private val pageScraperUrl: Url) {
+class Crawler(index: String, private val amount: Long, private val pageScraperUrl: Url) {
     private val es = Elastic(Credentials("elastic", "testerino"), Address("localhost", 9200), index)
     private val ktor = HttpClient(CIO) {
         install(JsonFeature) {
@@ -67,12 +66,13 @@ class Crawler(private val index: String, private val amount: Long, private val p
         val docs = queue[domain] ?: return
         docs.forEach { doc ->
             val source = doc.source() ?: return@forEach
-            println("Crawling ${source.address.url}")
+            print("Crawling ${source.address.url}")
             val res = scrapePage(Url(source.address.url))
 
-            if (res.status == 100) {
+            if (res.status == 200 && res.html != null) {
                 val page = HtmlParser(res.html, Url(source.address.url), source.inferredData.backLinks)
 
+                println(" -> Indexing backlinks (${page.body.links.internal.count() + page.body.links.external.count()})")
                 es.putDocsBacklinkInfoByUrl(page.body.links.internal, cleanUrl(res.url))
                 es.putDocsBacklinkInfoByUrl(page.body.links.external, cleanUrl(res.url))
                 es.indexPage(page, doc.id())
@@ -94,11 +94,12 @@ class Crawler(private val index: String, private val amount: Long, private val p
             crawlDomain(item.key)
         }
         es.close()
+        println("Crawler finished")
     }
 
-    suspend fun startIndex(url: Url) {
+    suspend fun indexFirstPage(url: Url) {
         val res = scrapePage(url)
-        if (res.status == 100) {
+        if (res.status == 100 && res.html != null) {
             val page = HtmlParser(res.html, Url(res.url), listOf())
             println(page.metadata.title)
             page.inferredData.ranks.smartRank = 1.0
