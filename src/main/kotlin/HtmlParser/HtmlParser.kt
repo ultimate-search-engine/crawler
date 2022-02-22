@@ -37,13 +37,13 @@ class LinksByHTML(doc: Document, url: Url) : Page.BodyLinks() {
             if (href.startsWith("/")) {
                 val baseUrl = url.cUrl.split("/").take(3).joinToString("/")
 
-                link.attr("href", if (href.startsWith("//")) "${baseUrl}$href" else "")
+                link.attr("href", if (href.startsWith("//")) "" else "${baseUrl}$href")
             }
         }
 
         for (link in links.distinctBy { it.attr("href") }) {
             val href = link.attr("href")
-            if (href == "" || !href.startsWith("http") || cleanUrl(href) == url.cUrl) continue
+            if (href == "" || !href.startsWith("https") || cleanUrl(href) == url.cUrl) continue
             if (getDomain(href).startsWith(getDomain(url.cUrl))) {
                 internal.add(Page.ForwardLink(cleanText(link.text()), cleanUrl(href)))
             } else {

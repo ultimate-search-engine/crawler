@@ -73,10 +73,17 @@ class Crawler(index: String, private val amount: Long, private val pageScraperUr
                 val page = HtmlParser(res.html, Url(source.address.url), source.inferredData.backLinks)
 
                 println(" -> Indexing backlinks (${page.body.links.internal.count() + page.body.links.external.count()})")
-                es.putDocsBacklinkInfoByUrl(page.body.links.internal, cleanUrl(res.url))
-                es.putDocsBacklinkInfoByUrl(page.body.links.external, cleanUrl(res.url))
+                putDocsBacklinkInfoByUrl(page.body.links.internal, cleanUrl(res.url))
+                putDocsBacklinkInfoByUrl(page.body.links.external, cleanUrl(res.url))
                 es.indexPage(page, doc.id())
-            } else {
+            }
+            else if (res.status == 404) {
+                println("Does not exist: ${res.status}")
+                val page = HtmlParser("", Url(source.address.url), source.inferredData.backLinks)
+                page.crawlerStatus = Page.CrawlerStatus.DoesNotExist
+                es.indexPage(page, doc.id())
+            }
+            else {
                 println("Error: ${res.status}")
                 val page = HtmlParser("", Url(source.address.url), source.inferredData.backLinks)
                 page.crawlerStatus = Page.CrawlerStatus.Error
@@ -86,6 +93,22 @@ class Crawler(index: String, private val amount: Long, private val pageScraperUr
         currentlyIndexingCount -= 1
     }
 
+    private suspend fun putDocsBacklinkInfoByUrl(
+        docForwardLinks: List<Page.ForwardLink>,
+        originUrl: String,
+    ): Unit = coroutineScope {
+        docForwardLinks.mapNotNull { docForwardLink ->
+            if (docForwardLink.href != originUrl) {
+                launch(Dispatchers.Unconfined) {
+                    es.putDocBacklinkInfoByUrl(
+                        cleanUrl(docForwardLink.href),
+                        Page.BackLink(docForwardLink.text, originUrl),
+                    )
+                }
+            } else null
+        }.forEach { it.join() }
+    }
+
 
     suspend fun crawl() = coroutineScope {
         queueDocs()
@@ -93,7 +116,6 @@ class Crawler(index: String, private val amount: Long, private val pageScraperUr
             currentlyIndexingCount += 1
             crawlDomain(item.key)
         }
-        es.close()
         println("Crawler finished")
     }
 
@@ -104,8 +126,8 @@ class Crawler(index: String, private val amount: Long, private val pageScraperUr
             println(page.metadata.title)
             page.inferredData.ranks.smartRank = 1.0
             es.indexPage(page)
-            es.putDocsBacklinkInfoByUrl(page.body.links.internal, res.url)
-            es.putDocsBacklinkInfoByUrl(page.body.links.external, res.url)
+            putDocsBacklinkInfoByUrl(page.body.links.internal, res.url)
+            putDocsBacklinkInfoByUrl(page.body.links.external, res.url)
             println("Indexed ${url.get()} successfully")
         }
         else println("Url cannot be crawled")
