@@ -1,4 +1,4 @@
-package HtmlParser
+package htmlParser
 
 import libraries.*
 
@@ -62,10 +62,9 @@ class BodyByHTML(doc: Document, url: Url) : Page.Body() {
 
 class InferredDataByHTML(url: Url, override var backLinks: List<Page.BackLink>) : Page.InferredData() {
     override val ranks: Page.Ranks = Page.Ranks()
-    override var domainName: String = getDomain(url.cUrl)
+    override var domainName: String = url.domain
 }
 
-//                                  url is not cleaned
 class HtmlParser(html: String, url: Url, backLinks: List<Page.BackLink>) : Page.PageType() {
     private val doc = Jsoup.parse(html)
     override val metadata = MetadataByHTML(doc)
@@ -77,7 +76,7 @@ class HtmlParser(html: String, url: Url, backLinks: List<Page.BackLink>) : Page.
     override val crawlerTimestamp: Long = System.currentTimeMillis()
 }
 
-class Url(val url: String) {
+class Url(private val url: String) {
     val cUrl = cleanUrl(url)
     val urlInWords = splitUrlToWords(url)
     val domain = getDomain(cUrl)

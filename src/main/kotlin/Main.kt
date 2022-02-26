@@ -1,15 +1,32 @@
-import HtmlParser.Url
+import htmlParser.Url
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import libraries.Address
+import libraries.Credentials
+import libraries.Elastic
+import kotlin.system.exitProcess
 
 
 suspend fun main() = runBlocking {
-    val crawler = Crawler("search", 100, Url("https://page-scraper-4tm6hxrtia-ew.a.run.app/crawler"))
 
+//    val crawler = Crawler("search", 100, Url("https://page-scraper-4tm6hxrtia-ew.a.run.app/crawler"))
 //    val es = Elastic(Credentials("elastic", "testerino"), Address("localhost", 9200), "search${System.currentTimeMillis()}")
+//
 //    es.alias.getIndexByAlias("search").forEach { es.deleteIndex(it) }
 //    es.putMapping(3)
 //    es.alias.create("search")
+//
 //    crawler.indexFirstPage(Url("https://github.com"))
 
-    crawler.crawl()
+    for (i in 0..0) {
+        println("$i batch")
+        val es = Elastic(Credentials("elastic", "testerino"), Address("localhost", 9200), "search")
+        val docCount = es.getAllDocsCount()
+        val size = listOf(docCount / 10, 600).minOf { it }
+        println("Scraping $size documents")
+        val crawler = Crawler("search", size, Url("https://page-scraper-4tm6hxrtia-ew.a.run.app/crawler"))
+        crawler.crawl(4)
+        delay(5000)
+    }
+
 }
