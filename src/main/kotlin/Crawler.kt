@@ -13,10 +13,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import libraries.Address
-import libraries.Credentials
-import libraries.Page
-import libraries.getDomain
+import libraries.*
 import java.util.concurrent.atomic.AtomicLong
 
 @Serializable
@@ -27,7 +24,7 @@ data class PageScraperRequest(val url: String)
 
 
 class Crawler(index: String, private val docCount: Long, private val pageScraperUrl: Url) {
-    private val es = ElasticExtended(Credentials("elastic", "testerino"), Address("localhost", 9200), index)
+    private val es = Elastic(Credentials("elastic", "testerino"), Address("localhost", 9200), index)
     private val indexObj = IndexQueue(es)
 
     private val ktor = HttpClient(CIO) {

@@ -2,7 +2,7 @@ import kotlinx.coroutines.*
 import libraries.Elastic
 import libraries.Page
 
-class IndexQueue(private val elastic: ElasticExtended) {
+class IndexQueue(private val elastic: Elastic) {
     private val pages = mutableMapOf<String, Page.PageType>()
     @OptIn(DelicateCoroutinesApi::class)
     private val queueContext = newSingleThreadContext("index-queue")
