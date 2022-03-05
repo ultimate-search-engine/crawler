@@ -10,7 +10,7 @@ class IndexQueue(private val elastic: Elastic) {
     suspend fun add(page: Page.PageType) = coroutineScope {
         withContext (queueContext) {
             parsePage(page)
-            parsePageLinks(page)
+            if (page.crawlerStatus == Page.CrawlerStatus.Crawled) parsePageLinks(page)
         }
     }
 

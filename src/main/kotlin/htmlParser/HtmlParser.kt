@@ -65,8 +65,7 @@ class InferredDataByHTML(url: Url, override var backLinks: List<Page.BackLink>) 
     override var domainName: String = url.domain
 }
 
-class HtmlParser(html: String, url: Url, backLinks: List<Page.BackLink>) : Page.PageType() {
-    private val doc = Jsoup.parse(html)
+class HtmlParser(doc: Document, url: Url, backLinks: List<Page.BackLink>) : Page.PageType() {
     override val metadata = MetadataByHTML(doc)
     override val body = BodyByHTML(doc, url)
 

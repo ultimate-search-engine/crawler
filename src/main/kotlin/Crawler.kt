@@ -14,6 +14,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import libraries.*
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import java.util.concurrent.atomic.AtomicLong
 
 @Serializable
@@ -23,8 +25,7 @@ data class PageScraperResponse(val html: String?, val status: Int, val url: Stri
 data class PageScraperRequest(val url: String)
 
 
-class Crawler(index: String, private val docCount: Long, private val pageScraperUrl: Url) {
-    private val es = Elastic(Credentials("elastic", "testerino"), Address("localhost", 9200), index)
+class Crawler(private val es: Elastic, private val docCount: Long, private val pageScraperUrl: Url) {
     private val indexObj = IndexQueue(es)
 
     private val ktor = HttpClient(CIO) {
@@ -39,6 +40,8 @@ class Crawler(index: String, private val docCount: Long, private val pageScraper
 
     private var currentlyIndexingCount = AtomicLong(0)
     private var finishedIndexing = AtomicLong(0)
+
+    private var finishedIndexingDocs = AtomicLong(0)
 
     private val queue = mutableMapOf<String, List<Hit<Page.PageType>>>()
 
@@ -56,7 +59,7 @@ class Crawler(index: String, private val docCount: Long, private val pageScraper
 
     private suspend fun queueDocs() {
         val docs =
-            es.maxValueByFieldAndCrawlerStatus("inferredData.ranks.pagerank", Page.CrawlerStatus.NotCrawled, docCount)
+            es.maxValueByFieldAndCrawlerStatus("inferredData.ranks.pagerank", Page.CrawlerStatus.NotCrawled, docCount * 12)
         if (docs?.isNotEmpty() != null) {
             prepareQueue(docs)
         }
@@ -73,22 +76,25 @@ class Crawler(index: String, private val docCount: Long, private val pageScraper
         val docs = queue[domain] ?: return
         docs.forEach { doc ->
             val source = doc.source() ?: return@forEach
-            println("Scraping ${source.address.url}")
+            println("$finishedIndexingDocs - Scraping ${source.address.url}")
             try {
-                if (queue.keys.count() - finishedIndexing.get() < queue.keys.count() / 10) {
+                if (queue.keys.count() - finishedIndexing.get() < queue.keys.count() / 10 || finishedIndexingDocs.get() >= docCount) {
                     // if 90% of domains are finished, stops crawling
                     return@crawlDomain
                 }
                 val res = scrapePage(Url(source.address.url))
                 if (res.html != null) {
+                    finishedIndexingDocs.incrementAndGet()
+                    val parsedHtml = Jsoup.parse(res.html)
                     val page = HtmlParser(
-                        if (res.status == 200) res.html else "",
+                        parsedHtml,
                         Url(source.address.url),
                         source.inferredData.backLinks
                     )
                     if (res.status == 200) page.crawlerStatus = Page.CrawlerStatus.Crawled
                     if (res.status == 400) page.crawlerStatus = Page.CrawlerStatus.Error
                     if (res.status == 404) page.crawlerStatus = Page.CrawlerStatus.DoesNotExist
+                    if (!isDocWanted(parsedHtml, page, Language.SupportedLanguages.En)) page.crawlerStatus = Page.CrawlerStatus.Unwanted
 
                     indexObj.add(page)
                 }
@@ -98,6 +104,12 @@ class Crawler(index: String, private val docCount: Long, private val pageScraper
             }
         }
         finishedIndexing.incrementAndGet()
+    }
+
+
+    private fun isDocWanted(doc: Document, page: Page.PageType, lang: Language.SupportedLanguages): Boolean {
+        val language = Language(doc, page)
+        return language.isDocInEnglish()
     }
 
 
@@ -113,6 +125,7 @@ class Crawler(index: String, private val docCount: Long, private val pageScraper
             }
         }.forEach { it.join() }
 
+        println("Indexing...")
         val foo = indexObj.mapToDocs()
         es.indexDocsBulkByIds(foo)
 
@@ -123,12 +136,16 @@ class Crawler(index: String, private val docCount: Long, private val pageScraper
         val res = scrapePage(url)
         if (res.status == 200 && res.html != null) {
             val indexObj = IndexQueue(es)
-            val page = HtmlParser(res.html, Url(res.url), listOf())
+
+            val parsedHtml = Jsoup.parse(res.html)
+            val page = HtmlParser(parsedHtml, Url(res.url), listOf())
+            page.crawlerStatus = Page.CrawlerStatus.Crawled
+
             println(page.metadata.title)
             page.inferredData.ranks.smartRank = 1.0
+
             indexObj.add(page)
-            val foo = indexObj.mapToDocs()
-            es.indexDocsBulkByIds(foo)
+            es.indexDocsBulkByIds(indexObj.mapToDocs())
 
             println("Indexed ${url.get()} successfully")
         } else println("Url cannot be crawled")
