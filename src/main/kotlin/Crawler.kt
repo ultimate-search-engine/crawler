@@ -8,10 +8,7 @@ import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import libraries.*
 import org.jsoup.Jsoup
@@ -94,7 +91,7 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
                     if (res.status == 200) page.crawlerStatus = Page.CrawlerStatus.Crawled
                     if (res.status == 400) page.crawlerStatus = Page.CrawlerStatus.Error
                     if (res.status == 404) page.crawlerStatus = Page.CrawlerStatus.DoesNotExist
-                    if (!isDocWanted(parsedHtml, page, Language.SupportedLanguages.En)) page.crawlerStatus = Page.CrawlerStatus.Unwanted
+                    if (!isDocWanted(parsedHtml, page)) page.crawlerStatus = Page.CrawlerStatus.Unwanted
 
                     indexObj.add(page)
                 }
@@ -107,10 +104,7 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
     }
 
 
-    private fun isDocWanted(doc: Document, page: Page.PageType, lang: Language.SupportedLanguages): Boolean {
-        val language = Language(doc, page)
-        return language.isDocInEnglish()
-    }
+    private fun isDocWanted(doc: Document, page: Page.PageType): Boolean = IsWanted(doc, page).isWanted()
 
 
     suspend fun crawl(concurrencyLimit: Int) = coroutineScope {
@@ -127,8 +121,7 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
 
         println("Indexing...")
         val foo = indexObj.mapToDocs()
-        es.indexDocsBulkByIds(foo)
-
+        withContext(NonCancellable) { es.indexDocsBulkByIds(foo) }
         println("Crawler finished")
     }
 

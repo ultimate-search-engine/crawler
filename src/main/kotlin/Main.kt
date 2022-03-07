@@ -5,22 +5,22 @@ import libraries.Address
 import libraries.Credentials
 import libraries.Elastic
 
-const val INDEX_NAME = "search"
-const val HOST = "10.0.0.33"
-const val PASSWORD = "0Se+4Stcs4VGWYBzLKip"
+const val IndexName = "search"
+const val Host = "10.0.0.33"
+const val Password = "0Se+4Stcs4VGWYBzLKip"
+val CrawlerUrl = Url("https://page-scraper-4tm6hxrtia-ew.a.run.app/crawler")
 
-suspend fun main() = runBlocking {
+suspend fun main(args: Array<String>) = runBlocking {
 
-    val es = Elastic(Credentials("elastic", PASSWORD), Address(HOST, 9200), INDEX_NAME)
+    val es = Elastic(Credentials("elastic", Password), Address(Host, 9200), IndexName)
 
-//    val crawler = Crawler(es, 100, Url("https://page-scraper-4tm6hxrtia-ew.a.run.app/crawler"))
-//
-//    es.alias.getIndexByAlias("search").forEach { es.deleteIndex(it) }
-//    es.putMapping(3)
-//    es.alias.create("search")
-//
-//    crawler.indexFirstPage(Url("https://github.com"))
+    if (args.isNotEmpty() && args[0] == "createIndex") createIndexWithInitialPage()
 
+    runCrawler(es)
+}
+
+
+suspend fun runCrawler(es: Elastic) {
     val docCount = es.getAllDocsCount()
     val maxBatchSize = 800L
 
@@ -32,10 +32,12 @@ suspend fun main() = runBlocking {
         println("$i batch")
         println("Scraping $size documents")
 
-        val crawler = Crawler(es, size, Url("https://page-scraper-4tm6hxrtia-ew.a.run.app/crawler"))
+        val crawler = Crawler(es, size, CrawlerUrl)
         crawler.crawl(16)
 
         delay(2000)
     }
-
 }
+
+
+
