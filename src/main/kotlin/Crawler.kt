@@ -73,7 +73,7 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
         val docs = queue[domain] ?: return
         docs.forEach { doc ->
             val source = doc.source() ?: return@forEach
-            println("$finishedIndexingDocs - Scraping ${source.address.url}")
+//            println("$finishedIndexingDocs - Scraping ${source.address.url}")
             try {
                 if (queue.keys.count() - finishedIndexing.get() < queue.keys.count() / 10 || finishedIndexingDocs.get() >= docCount) {
                     // if 90% of domains are finished, stops crawling
@@ -96,7 +96,7 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
                     indexObj.add(page)
                 }
             } catch (e: Exception) {
-                println("Error scraping ${source.address.url}")
+//                println("Error scraping ${source.address.url}")
                 println(e.message)
             }
         }
@@ -121,7 +121,12 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
 
         println("Indexing...")
         val foo = indexObj.mapToDocs()
-        withContext(NonCancellable) { es.indexDocsBulkByIds(foo) }
+        withContext(NonCancellable) {
+            foo.chunked(3_000).forEachIndexed { index, docs ->
+                println("Indexing chunk $index / ${foo.size / 3_000}")
+                es.indexDocsBulkByIds(docs)
+            }
+        }
         println("Crawler finished")
     }
 

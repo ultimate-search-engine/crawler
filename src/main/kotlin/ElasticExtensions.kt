@@ -37,9 +37,9 @@ suspend fun Elastic.maxValueByFieldAndCrawlerStatus(
 
 
 suspend fun createIndexWithInitialPage() {
+    println("Creating index")
     val es = Elastic(Credentials("elastic", Password), Address(Host, 9200), "$IndexName${System.currentTimeMillis()}")
 
-    println("Creating index")
     try {
         es.alias.delete(IndexName)
     } catch (e: Exception) {
