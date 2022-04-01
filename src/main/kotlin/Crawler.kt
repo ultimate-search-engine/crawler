@@ -10,7 +10,9 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
-import libraries.*
+import libraries.Elastic
+import libraries.Page
+import libraries.getDomain
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.util.concurrent.atomic.AtomicLong
@@ -30,7 +32,7 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
             serializer = KotlinxSerializer()
         }
         install(HttpTimeout) {
-            requestTimeoutMillis = 40000
+            requestTimeoutMillis = 60_000
         }
     }
 
@@ -55,11 +57,23 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
 
 
     private suspend fun queueDocs() {
-        val docs =
-            es.maxValueByFieldAndCrawlerStatus("inferredData.ranks.pagerank", Page.CrawlerStatus.NotCrawled, docCount * 12)
-        if (docs?.isNotEmpty() != null) {
-            prepareQueue(docs)
-        }
+        var lastPagerank: Double? = null
+        val docLimit = 20
+        do {
+            val search = es.searchAfterPagerank(docCount, lastPagerank)
+            val docs = search.hits().hits()
+            if (docs.isNotEmpty()) {
+                lastPagerank = docs.last().source()?.inferredData?.ranks?.pagerank
+                prepareQueue(docs)
+                queue.forEach { (key, value) ->
+                    if (value.size > docLimit) {
+                        queue[key] = value.subList(0, docLimit)
+                    }
+                }
+            }
+        } while (queue.keys.size < docCount && docs.isNotEmpty())
+
+        println("Queue size: ${queue.values.sumOf { it.size }}")
     }
 
 
@@ -75,8 +89,8 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
             val source = doc.source() ?: return@forEach
 //            println("$finishedIndexingDocs - Scraping ${source.address.url}")
             try {
-                if (queue.keys.count() - finishedIndexing.get() < queue.keys.count() / 10 || finishedIndexingDocs.get() >= docCount) {
-                    // if 90% of domains are finished, stops crawling
+                if (queue.keys.count() - finishedIndexing.get() < queue.keys.count() / (100 / 20) || finishedIndexingDocs.get() >= docCount) {
+                    // if 80% of domains are finished, stops crawling
                     return@crawlDomain
                 }
                 val res = scrapePage(Url(source.address.url))
@@ -88,12 +102,16 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
                         Url(source.address.url),
                         source.inferredData.backLinks
                     )
-                    if (res.status == 200) page.crawlerStatus = Page.CrawlerStatus.Crawled
-                    if (res.status == 400) page.crawlerStatus = Page.CrawlerStatus.Error
-                    if (res.status == 404) page.crawlerStatus = Page.CrawlerStatus.DoesNotExist
+                    when (res.status) {
+                        200 -> page.crawlerStatus = Page.CrawlerStatus.Crawled
+                        400 -> page.crawlerStatus = Page.CrawlerStatus.Error
+                        404 -> page.crawlerStatus = Page.CrawlerStatus.DoesNotExist
+                        else -> page.crawlerStatus = Page.CrawlerStatus.Error
+                    }
                     if (!isDocWanted(parsedHtml, page)) page.crawlerStatus = Page.CrawlerStatus.Unwanted
 
                     indexObj.add(page)
+                    if (res.status != 200) println("${res.status} - ${source.address.url}")
                 }
             } catch (e: Exception) {
 //                println("Error scraping ${source.address.url}")
@@ -120,10 +138,11 @@ class Crawler(private val es: Elastic, private val docCount: Long, private val p
         }.forEach { it.join() }
 
         println("Indexing...")
+
         val foo = indexObj.mapToDocs()
         withContext(NonCancellable) {
-            foo.chunked(3_000).forEachIndexed { index, docs ->
-                println("Indexing chunk $index / ${foo.size / 3_000}")
+            foo.chunked(bulkSize).forEach { docs ->
+                // println("Indexing chunk $index / ${foo.size / bulkSize}")
                 es.indexDocsBulkByIds(docs)
             }
         }

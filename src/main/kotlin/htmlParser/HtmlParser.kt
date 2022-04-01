@@ -19,10 +19,10 @@ class MetadataByHTML(doc: Document) : Page.Metadata() {
 class HeadingsByHTML(doc: Document) : Page.Headings() {
     override val h1 = doc.select("h1").map { it.text() }.toList()
     override val h2 = doc.select("h2").map { it.text() }.toList()
-    override val h3 = doc.select("h3").map { it.text() }.toList()
-    override val h4 = doc.select("h4").map { it.text() }.toList()
-    override val h5 = doc.select("h5").map { it.text() }.toList()
-    override val h6 = doc.select("h6").map { it.text() }.toList()
+    override val h3 = listOf<String>() // doc.select("h3").map { it.text() }.toList()
+    override val h4 = listOf<String>() // doc.select("h4").map { it.text() }.toList()
+    override val h5 = listOf<String>() // doc.select("h5").map { it.text() }.toList()
+    override val h6 = listOf<String>() // doc.select("h6").map { it.text() }.toList()
 }
 
 class LinksByHTML(doc: Document, url: Url) : Page.BodyLinks() {

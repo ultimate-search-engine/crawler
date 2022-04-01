@@ -20,7 +20,7 @@ class IndexQueue(private val elastic: Elastic) {
         pages[page.address.url] = page
     }
 
-    private fun parsePageLinks(page: Page.PageType) {
+    private fun parsePageLinks(page: Page.PageType, crawlerStatus: Page.CrawlerStatus = Page.CrawlerStatus.NotCrawled) {
         for (link in page.body.links.external + page.body.links.internal) {
             val pageMapElem = pages[link.href]
             if (pageMapElem != null) {
@@ -29,15 +29,22 @@ class IndexQueue(private val elastic: Elastic) {
             } else {
                 val newPage = Page.PageType(link.href)
                 newPage.inferredData.backLinks += Page.BackLink(link.text, page.address.url)
+                newPage.crawlerStatus = crawlerStatus
                 pages[link.href] = newPage
             }
         }
     }
 
     suspend fun mapToDocs(): List<Elastic.PageById> {
-        val bulkSearch = withContext(Dispatchers.IO) { elastic.docsByUrlOrNullBulk(pages.keys.toList()) }
+        val bulkSearch = withContext(Dispatchers.IO) {
+            pages.keys.toList().chunked(bulkSize).map {
+                elastic.docsByUrlOrNullBulk(it)
+            }
+        }
 
-        val responses = bulkSearch?.responses()?.map { it.result().hits().hits().firstOrNull() } ?: listOf()
+        val bulkSearchResponses = bulkSearch.mapNotNull { it?.responses() }.flatten()
+
+        val responses = bulkSearchResponses.map { it.result().hits().hits().firstOrNull() } ?: listOf()
         val zipped = responses.zip(pages.values)
 
         return zipped.map { (hit, page) ->
