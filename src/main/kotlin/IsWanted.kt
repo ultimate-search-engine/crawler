@@ -1,24 +1,22 @@
-import libraries.Page
 import org.jsoup.nodes.Document
 
-class IsWanted(private val doc: Document, private val page: Page.PageType) {
+class IsWanted {
 
-    private fun isDocInEnglish(): Boolean {
-        val correctLang = langAttr().lowercase().contains("en") || langAttr().contains("")
-        val correctPath = page.address.url.lowercase().contains("/en/")
-        return correctLang || correctPath
+    private fun isDocInEnglish(doc: Document): Boolean {
+        //        val correctPath = page.address.url.lowercase().contains("/en/")
+        return langAttr(doc).lowercase().contains("en") || langAttr(doc) == "" // || correctPath
     }
 
-    private fun langAttr(): String = doc.attr("lang")
+    private fun langAttr(doc: Document): String = doc.attr("lang")
 
-    private fun isNoIndex(): Boolean {
+    private fun isNoIndex(doc: Document): Boolean {
         return doc.attr("robots").contains("noindex")
     }
 
-    fun isWanted(): Boolean {
+    fun isWanted(doc: Document): Boolean {
         return listOf(
-            isDocInEnglish(),
-            !isNoIndex(),
+            isDocInEnglish(doc),
+            !isNoIndex(doc),
         ).all { it }
     }
 }
