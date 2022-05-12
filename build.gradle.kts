@@ -29,6 +29,10 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktor_version")
     implementation("io.ktor:ktor-client-serialization:$ktor_version")
 
+    implementation("org.litote.kmongo:kmongo:4.5.1")
+    implementation("org.litote.kmongo:kmongo-async:4.5.1")
+    implementation("org.litote.kmongo:kmongo-coroutine:4.5.1")
+
 
     implementation(files("libraries/lib.jar"))
     testImplementation(kotlin("test"))
