@@ -38,7 +38,7 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
             serializer = KotlinxSerializer()
         }
         install(HttpTimeout) {
-            requestTimeoutMillis = 42_000
+            requestTimeoutMillis = 80_000
         }
     }
 
@@ -68,7 +68,7 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
             else null
         }
 
-    private suspend fun scrapePage(url: Url): PageScraperResponse = coroutineScope {
+    private suspend fun scrapePage(url: Url, nthTry: Int = 0): PageScraperResponse? = coroutineScope {
         // selects the least busy scraper
         val scraper = getAvailableScraper() ?: throw Exception("No scraper available")
 
@@ -84,7 +84,8 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
             scraper.currentConcurrency.decrementAndGet()
             println("Error during POST request with url: $url, retrying in 10 seconds")
             delay(10_000)
-            scrapePage(url)
+            if (nthTry < 3) scrapePage(url, nthTry + 1)
+            else null
         }
     }
 
@@ -110,11 +111,10 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
 
         currentlyCrawling.add(randomUrl.cUrl())
         currentlyCrawling.addDomain(randomUrl)
-        val page = scrapePage(randomUrl)
+        val page = scrapePage(randomUrl) ?: return
+
         val prev = dbClient.find(Url(page.url).cUrl()).firstOrNull()
-
         val doc = Jsoup.parse(page.html)
-
         val code = if (page.status == 200) {
             if (isWanted.isWanted(doc)) page.status else 0
         } else page.status
@@ -193,7 +193,7 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
     }
 
     suspend fun indexFirstPage(url: Url) {
-        val res = scrapePage(url)
+        val res = scrapePage(url) ?: throw Exception("Could not scrape page")
         if (res.status == 200) {
             handlePageWrite(url, res, 200)
 
