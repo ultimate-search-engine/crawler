@@ -5,12 +5,13 @@ import io.ktor.client.features.json.*
 import io.ktor.client.features.json.serializer.*
 import io.ktor.client.request.*
 import io.ktor.http.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import libraries.PageRepository
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
-import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -27,11 +28,11 @@ data class PageScraper(
 )
 
 class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit: Long? = Long.MAX_VALUE) {
-    private val dbClient = PageRepository.MongoClient(dbName, "mongodb://localhost:27017")
     private val limit = limit ?: Long.MAX_VALUE
     private val docsIndexed = AtomicLong(0)
 
-    private val currentlyCrawling = CurrentlyCrawling()
+    private val urlDecider: UrlDecide = UrlDecider()
+    private val isWanted = IsWanted()
 
     private val ktor = HttpClient(CIO) {
         install(JsonFeature) {
@@ -40,25 +41,6 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
         install(HttpTimeout) {
             requestTimeoutMillis = 80_000
         }
-    }
-
-    private class CurrentlyCrawling {
-        private val currentlyCrawling = mutableSetOf<String>()
-
-        @OptIn(DelicateCoroutinesApi::class)
-        private val context = newSingleThreadContext("CurrentlyCrawling")
-        suspend fun add(url: String) = withContext(context) { currentlyCrawling.add(url) }
-
-        suspend fun remove(url: String) = withContext(context) { currentlyCrawling.remove(url) }
-
-        suspend fun contains(url: String) = withContext(context) { currentlyCrawling.contains(url) }
-
-        suspend fun addDomain(url: Url) = withContext(context) { currentlyCrawling.add(url.host) }
-
-        suspend fun removeDomain(url: Url) = withContext(context) { currentlyCrawling.remove(url.host) }
-
-        suspend fun containsDomain(url: Url) = withContext(context) { currentlyCrawling.contains(url.host) }
-
     }
 
 
@@ -95,65 +77,42 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
         for (i in 1..concurrency) {
             launch(Dispatchers.Unconfined) {
                 while (docsIndexed.get() < limit) {
-                    val randomPage = getRandomNotCrawledPage()
-                    handlePage(randomPage)
+                    val randomPage = urlDecider.get()
+                    handlePage(randomPage.first, randomPage.second.dbName)
+                    urlDecider.free(randomPage.first)
                 }
             }
         }
     }
 
-    private suspend fun handlePage(randomUrl: Url) {
-        if (randomUrl.protocol.name == "http") return
+    private suspend fun handlePage(randomUrl: Url, dbClient: PageRepository.Client) {
         if ((docsIndexed.getAndIncrement() % 200) == 0L) {
             println("${getAvailableScraper()?.currentConcurrency?.get()}/${getAvailableScraper()?.maxConcurrentRequests?.get()}")
             println("${docsIndexed.get()}/${limit}")
         }
 
-        currentlyCrawling.add(randomUrl.cUrl())
-        currentlyCrawling.addDomain(randomUrl)
         val page = scrapePage(randomUrl) ?: return
 
-        val prev = dbClient.find(Url(page.url).cUrl()).firstOrNull()
+        val prev = dbClient.find(Url(page.url).cUrl())
         val doc = Jsoup.parse(page.html)
         val code = if (page.status == 200) {
             if (isWanted.isWanted(doc)) page.status else 0
         } else page.status
 
         try {
-            handlePageWrite(randomUrl, page, code, prev)
+            handlePageWrite(randomUrl, page, code, prev, dbClient)
         } catch (e: Exception) {
             println("Error: ${e.message}")
         }
-
-        currentlyCrawling.removeDomain(randomUrl)
-        if (code == 200) dampeningUrl(doc, randomUrl)
-        currentlyCrawling.remove(randomUrl.cUrl())
     }
 
-    private suspend fun dampeningUrl(doc: Document, url: Url) {
-        val xd = doc.pageLinks(url).randomOrNull()
-        if (xd != null) {
-            val random = Random()
-            if (random.nextFloat() < 0.85) {
-                if (!isIndexed(xd)) {
-                    handlePage(xd)
-                } else {
-                    (dbClient.find(xd.cUrl()).firstOrNull() ?: dbClient.findTarget(xd.cUrl()).firstOrNull())?.let {
-                        dampeningUrl(Jsoup.parse(it.content), Url(it.finalUrl))
-                    }
-                }
-            }
-        }
-    }
-
-
-    private val isWanted = IsWanted()
 
     private suspend fun handlePageWrite(
         randomUrl: Url,
         page: PageScraperResponse,
         code: Int,
-        prev: PageRepository.Page? = null
+        prev: PageRepository.Page? = null,
+        dbClient: PageRepository.Client
     ) {
 //        println("$code ${randomUrl.cUrl()}")
         if (prev != null) {
@@ -176,57 +135,15 @@ class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit
     }
 
 
-    private tailrec suspend fun getRandomNotCrawledPage(): Url {
-        val randomPageDoc = dbClient.randomPages(1, 200).firstOrNull() ?: return getRandomNotCrawledPage()
-        val randomPageHtml = Jsoup.parse(randomPageDoc.content)
-        val link =
-            randomPageHtml.pageLinks(Url(randomPageDoc.finalUrl)).randomOrNull() ?: return getRandomNotCrawledPage()
-        return if (!isIndexed(link)) link
-        else getRandomNotCrawledPage()
-    }
-
-    private suspend fun isIndexed(link: Url): Boolean {
-        return currentlyCrawling.contains(link.cUrl())
-                || currentlyCrawling.containsDomain(link)
-                || dbClient.find(link.cUrl()).isNotEmpty()
-                || dbClient.findTarget(link.cUrl()).isNotEmpty()
-    }
-
-    suspend fun indexFirstPage(url: Url) {
+    suspend fun indexFirstPage(url: Url, client: PageRepository.Client) {
         val res = scrapePage(url) ?: throw Exception("Could not scrape page")
         if (res.status == 200) {
-            handlePageWrite(url, res, 200)
+            handlePageWrite(url, res, 200, dbClient = client)
 
             println("Indexed $url successfully")
         } else println("Url cannot be crawled")
     }
 
-
-}
-
-
-fun Document.pageLinks(url: Url): List<Url> {
-    val links = this.select("a")
-
-    return links.mapNotNull {
-        try {
-            val href = it.attr("href")
-            if (href.startsWith("https")) {
-                Url(href)
-            } else if (href.startsWith("/") && !href.startsWith("//")) {
-
-                val hrefUrl = "${url.protocol.name}://${url.host}$href"
-
-                if (hrefUrl.endsWith("/")) Url(hrefUrl.dropLast(1))
-                else Url(hrefUrl)
-
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
 
 }
 

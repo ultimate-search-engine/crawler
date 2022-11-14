@@ -20,10 +20,20 @@ suspend fun main(): Unit = runBlocking {
 
 suspend fun runCrawler() {
 
-    val crawler = 
-Crawler(listOf(PageScraper("http://localhost:8080/crawler", 
-AtomicInteger(10))), "web1", limit = 60000)
-//    crawler.indexFirstPage(Url("https://github.com/"))
+    val crawler =
+        Crawler(
+            listOf(
+                PageScraper(
+                    "http://localhost:8080/crawler",
+                    AtomicInteger(6)
+                )
+            ), "ency", limit = Long.MAX_VALUE
+        )
+
+//    allowedCrawlerHosts.forEach {
+//        crawler.indexFirstPage(it.host, it.dbName)
+//    }
+//    crawler.indexFirstPage(allowedCrawlerHosts[5].host, allowedCrawlerHosts[5].dbName)
     crawler.crawl()
 }
 
