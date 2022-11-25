@@ -27,8 +27,7 @@ data class PageScraper(
     var currentConcurrency: AtomicInteger = AtomicInteger(0)
 )
 
-class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, limit: Long? = Long.MAX_VALUE) {
-    private val limit = limit ?: Long.MAX_VALUE
+class Crawler(private val pageScrapers: List<PageScraper>, dbName: String, private val limit: Long) {
     private val docsIndexed = AtomicLong(0)
 
     private val urlDecider: UrlDecide = UrlDecider()
