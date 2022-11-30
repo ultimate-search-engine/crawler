@@ -1,15 +1,8 @@
 import io.ktor.http.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.channels.produce
 import libraries.PageRepository
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import kotlin.math.roundToInt
-import kotlin.random.Random
-import kotlin.time.ExperimentalTime
-import kotlin.time.TimedValue
-import kotlin.time.measureTimedValue
 
 abstract class UrlDecide {
     abstract suspend fun get(): Pair<Url, Host>
@@ -24,52 +17,47 @@ data class Host(
     var crawledSoFar: Long = 0
 )
 
+val location = if (dbUsername.isNotEmpty()) "mongodb://$dbUsername:$dbPassword@$dbHost:$dbPort" else "mongodb://$dbHost:$dbPort"
+
 val allowedCrawlerHosts = listOf(
-    Host(
-        Url("https://www.britannica.com"),
-        1.0,
-        PageRepository.MongoClient("ency", collectionName = "britannica"),
+    Host(Url("https://www.britannica.com"),
+        boostForUrls[0],
+        PageRepository.MongoClient("ency", collectionName = "britannica", location = location),
         { url ->
             val split = url.cUrl().split("/")
             if (split.size >= 2) !split[1].contains("story")
             else true
         }),
-    Host(
-        Url("https://deletionpedia.org/en/Main_Page"),
-        0.2,
-        PageRepository.MongoClient("ency", collectionName = "deletionpedia"),
+    Host(Url("https://deletionpedia.org/en/Main_Page"),
+        boostForUrls[1],
+        PageRepository.MongoClient("ency", collectionName = "deletionpedia", location = location),
         { url -> true }),
-    Host(
-        Url("https://www.infoplease.com"),
-        1.0,
-        PageRepository.MongoClient("ency", collectionName = "infoplease"),
+    Host(Url("https://www.infoplease.com"),
+        boostForUrls[2],
+        PageRepository.MongoClient("ency", collectionName = "infoplease", location = location),
         { url -> true }),
 //    Host(Url("https://www.encyclopedia.com"), 1.0, PageRepository.MongoClient("ency", collectionName = "encyclopedia"), { url -> true }),
-    Host(
-        Url("http://www.scholarpedia.org/article/Main_Page"),
-        5.0,
-        PageRepository.MongoClient("ency", collectionName = "scholarpedia"),
+    Host(Url("http://www.scholarpedia.org/article/Main_Page"),
+        boostForUrls[3],
+        PageRepository.MongoClient("ency", collectionName = "scholarpedia", location = location),
         { url -> true }),
-    Host(
-        Url("https://www.goodreads.com"),
-        24.0,
-        PageRepository.MongoClient("ency", collectionName = "goodreads"),
+    Host(Url("https://www.goodreads.com"),
+        boostForUrls[4],
+        PageRepository.MongoClient("ency", collectionName = "goodreads", location = location),
         { url ->
             val xdd = url.encodedPath.split("/")
             if (xdd.size >= 2) {
                 val xd = xdd[1]
                 xd == "book" || xd == "author" || xd == "genre"
             } else false
-         }),
-    Host(
-        Url("https://en.wikipedia.org/wiki/Main_Page"),
-        32.0,
-        PageRepository.MongoClient("ency", collectionName = "wikipedia"),
+        }),
+    Host(Url("https://en.wikipedia.org/wiki/Main_Page"),
+        boostForUrls[5],
+        PageRepository.MongoClient("ency", collectionName = "wikipedia", location = location),
         { url -> true }),
-    Host(
-        Url("https://ncatlab.org/nlab/show/HomePage"),
-        4.0,
-        PageRepository.MongoClient("ency", collectionName = "ncatlab"),
+    Host(Url("https://ncatlab.org/nlab/show/HomePage"),
+        boostForUrls[6],
+        PageRepository.MongoClient("ency", collectionName = "ncatlab", location = location),
         { url -> true }),
 )
 
@@ -99,14 +87,12 @@ class UrlDecider : UrlDecide() {
     private suspend fun randomPage(): Pair<Url, Host> {
         val host = allowedCrawlerHosts.map { host ->
             Pair(
-                host,
-                (host.crawledSoFar.toDouble() / host.boost)
+                host, (host.crawledSoFar.toDouble() / host.boost)
             )
         }.minByOrNull { it.second }
 
 
         val dbClient = host?.first?.dbName ?: return randomPage()
-        print(host.first.host.host)
         host.first.crawledSoFar += 1
         val page = dbClient.randomPages(1, 200).firstOrNull() ?: return randomPage()
         //if (currentlyCrawling.contains(Url(page.finalUrl))) {
@@ -115,7 +101,6 @@ class UrlDecider : UrlDecide() {
         //}
         val pageCont = page.content
         val suitableLinks = Jsoup.parse(pageCont).pageLinks(Url(page.finalUrl)).let { suitableUrls(it, host.first) }
-        println(suitableLinks.size)
         val suitableUnindexedLinks = suitableLinks.mapNotNull {
             if (isIndexed(it, host.first.dbName)) null else it
         }
@@ -129,8 +114,9 @@ class UrlDecider : UrlDecide() {
     }
 
     private suspend fun isIndexed(link: Url, dbClient: PageRepository.Client): Boolean {
-        return currentlyCrawling.contains(link) || currentlyCrawling.containsDomain(link) || dbClient.find(link.cUrl()) != null
-                || dbClient.findTarget(link.cUrl()).isNotEmpty()
+        return currentlyCrawling.contains(link) || currentlyCrawling.containsDomain(link) || dbClient.find(link.cUrl()) != null || dbClient.findTarget(
+            link.cUrl()
+        ).isNotEmpty()
     }
 
     private fun suitableUrls(urls: List<Url>, host: Host): List<Url> = urls.mapNotNull {

@@ -27,7 +27,7 @@ suspend fun runCrawler() {
                     "http://localhost:8080/crawler",
                     AtomicInteger(6)
                 )
-            ), "ency", limit = Long.MAX_VALUE
+            ), "ency", limit = envLimit
         )
 
 //    allowedCrawlerHosts.forEach {
@@ -37,4 +37,9 @@ suspend fun runCrawler() {
     crawler.crawl()
 }
 
-
+val dbHost: String = (System.getenv("DB_HOST") ?: "").ifEmpty { "localhost" }
+val dbPort: String = (System.getenv("DB_PORT") ?: "").ifEmpty { "27017" }
+val dbUsername = (System.getenv("DB_USERNAME") ?: "").ifEmpty { "" }
+val dbPassword = (System.getenv("DB_PASSWORD") ?: "").ifEmpty { "" }
+val envLimit = (System.getenv("LIMIT") ?: "").ifEmpty { "100000" }.toLong()
+val boostForUrls = (System.getenv("DB_PORT") ?: "").ifEmpty { "1.0,0.2,1.0,5.0,16.0,32.0,4.0" }.split(",").map { it.toDouble() }
