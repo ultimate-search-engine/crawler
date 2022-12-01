@@ -35,6 +35,9 @@ dependencies {
 
 
     implementation(files("libraries/lib.jar"))
+
+    implementation("io.github.cdimascio:dotenv-kotlin:6.4.0")
+
     testImplementation(kotlin("test"))
 }
 
