@@ -17,7 +17,7 @@ data class Host(
     var crawledSoFar: Long = 0
 )
 
-val location = if (dbUsername.isNotEmpty()) "mongodb://$dbUsername:$dbPassword@$dbHost:$dbPort/ency?authSource=admin" else "mongodb://$dbHost:$dbPort"
+val location = if (dbUsername.isNotEmpty()) "mongodb://$dbUsername:$dbPassword@$dbHost:$dbPort" else "mongodb://$dbHost:$dbPort"
 
 val allowedCrawlerHosts = listOf(
     Host(Url("https://www.britannica.com"),
