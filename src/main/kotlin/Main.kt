@@ -4,7 +4,10 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
 
 import io.github.cdimascio.dotenv.dotenv
+val dotenv = dotenv()
 
+val psHost: String = (dotenv["PS_HOST"] ?: "").ifEmpty { "localhost" }
+val psPort: String = (dotenv["PS_PORT"] ?: "").ifEmpty { "8080" }
 //val IndexName = dotenv["IndexName") ?] "search"
 //val Host = dotenv["ElasticHost") ?] "localhost"
 //val Password = dotenv["ELASTIC_PASSWORD") ?] throw (Exception("ELASTIC_PASSWORD not set in env variable"))
@@ -26,7 +29,7 @@ suspend fun runCrawler() {
         Crawler(
             listOf(
                 PageScraper(
-                    "http://localhost:8080/crawler",
+                    "http://$psHost:$psPort/crawler",
                     AtomicInteger(6)
                 )
             ), "ency", limit = envLimit
@@ -38,8 +41,6 @@ suspend fun runCrawler() {
 //    crawler.indexFirstPage(allowedCrawlerHosts[5].host, allowedCrawlerHosts[5].dbName)
     crawler.crawl()
 }
-
-val dotenv = dotenv()
 
 val dbHost: String = (dotenv["DB_HOST"] ?: "").ifEmpty { "localhost" }
 val dbPort: String = (dotenv["DB_PORT"] ?: "").ifEmpty { "27017" }
