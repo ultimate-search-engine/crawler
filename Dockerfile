@@ -4,4 +4,4 @@ COPY ./crawler /app
 RUN cd /app && chmod +x gradlew && ./gradlew build
 WORKDIR /app
 RUN touch .env
-CMD ["./gradlew", "run"]
+ENTRYPOINT ["./gradlew", "run"]
